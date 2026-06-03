@@ -1,0 +1,132 @@
+{
+  "name": "Ollama",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incoming-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "711fdfe0-d598-4991-a371-923c8a7c2fce",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        -128
+      ],
+      "webhookId": "f8e2b778-2567-4e4a-a4e3-8deee862a823"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Name: {{ $json.body.name }}\nEmail: {{ $json.body.email }}\nCompany: {{ $json.body.company }}\nMessage: {{ $json.body.message }}\nSubmitted At: {{ $json.body.submitted_at }}",
+        "options": {
+          "systemMessage": "You are an expert Sales Operations AI. Analyze the incoming contact form details. Your job is to extract: 1. The core problem the client wants solved. 2. A lead score from 1-10 based on their budget (scale: anything over $10k is an 8+, under $2k is a 2). Output your final analysis strictly as clean Markdown with clear headers: ## Executive Summary, ## Pain Point, ## Lead Score & Justification."
+        }
+      },
+      "id": "9e3d092a-8f93-460b-bae6-847b1769bca6",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -416,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "model": "tinyllama:latest",
+        "options": {}
+      },
+      "id": "2270df9f-1b02-4de0-9c9d-3b6355a17b8b",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        112
+      ],
+      "credentials": {
+        "ollamaApi": {
+          "id": "DXtrUdQ438oAnJML",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.output }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/markdown; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "6da41fe7-2730-4e96-aeae-6f6a433ba99b",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -128,
+        -96
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "16d06e8a-9201-4bd6-bd84-b4e4a8ae9aef",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "094bd2e426a18cbe6471f3d0a4313d2fbc2bb6ac29e55eff7da59cebdabba6d9"
+  },
+  "id": "3gutNnWSvZ3g84qn",
+  "tags": []
+}

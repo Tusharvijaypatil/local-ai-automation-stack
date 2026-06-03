@@ -1,0 +1,155 @@
+{
+  "name": "Autonomous Web Scraper & AI Outreach Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ac388478-1148-4081-bac1-82e882e912c2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -592,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url || \"https://consultbae.com/\" }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "f339bb1b-0f74-4781-bec8-b1c4e852748e",
+      "name": "Scrape Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -352,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "sourceData": "binary",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "clean_text",
+              "cssSelector": "body"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2fb707dc-5684-4128-9cd6-15ea0e14d3a1",
+      "name": "HTML Node",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze this scraped website data from our target client: {{ $json.clean_text }}. Identify what their company does and who their target customer is.",
+        "options": {
+          "systemMessage": "You are an elite B2B Growth Marketer. Review the scraped text of the target company's website. Draft a hyper-personalized, 3-sentence cold outreach email. Sentence 1: Compliment their unique value proposition based on the text. Sentence 2: Call out a common bottleneck companies like theirs face with scaling automation. Sentence 3: Propose a short 10-minute introductory call next week. Do not use generic template language or placeholders like [Insert Name]."
+        }
+      },
+      "id": "64b391ab-68b7-4bb7-bad5-e3fa482a6dbb",
+      "name": "AI Personalization Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        128,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "model": "tinyllama:latest",
+        "options": {}
+      },
+      "id": "ceed94a2-44a2-4940-adad-385e51e7ff19",
+      "name": "Ollama Local Engine",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        112,
+        32
+      ],
+      "credentials": {
+        "ollamaApi": {
+          "id": "DXtrUdQ438oAnJML",
+          "name": "Ollama account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Scrape Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Website": {
+      "main": [
+        [
+          {
+            "node": "HTML Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Node": {
+      "main": [
+        [
+          {
+            "node": "AI Personalization Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Local Engine": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Personalization Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "086ad2aa-5847-4847-bc46-f7f39d6e12eb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "094bd2e426a18cbe6471f3d0a4313d2fbc2bb6ac29e55eff7da59cebdabba6d9"
+  },
+  "id": "yJKNVEFb9QxJtitD",
+  "tags": []
+}
