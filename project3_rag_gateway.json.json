@@ -1,0 +1,168 @@
+{
+  "name": "Project 3: Enterprise RAG Gateway & Escalation Router",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "49162b60-ac27-4343-b287-0d7b16ff2b06",
+      "name": "When Clicking 'Execute Workflow' Node",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -992,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/v1/query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"query\": \"Do you have any technical guides on automated agent deployment workflows?\",\n  \"email\": \"sjenkins@hypergrowth.io\",\n  \"book_title\": \"Automation Mastery\"\n}",
+        "options": {}
+      },
+      "id": "8a64f478-0c6e-49ae-ac4c-800606e3450b",
+      "name": "HTTP Request Node (The Python Bridge)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -736,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "escalation_status_assign",
+              "name": "escalation_status",
+              "value": "QUEUED",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "02847474-366d-4dc3-8731-992528ec99b1",
+      "name": "Human Escalation Queue",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "response_status_assign",
+              "name": "auto_reply_sent",
+              "value": "SUCCESS",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ecc2a379-e479-4360-a9f4-7972acb68c67",
+      "name": "Send Automated AI Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a7ca7070-50ba-470f-b8b6-403ee61a5d59",
+              "leftValue": "={{ $json.escalate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -528,
+        144
+      ],
+      "id": "3f06ab90-7280-4da6-af7a-535edd73a078",
+      "name": "If"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Clicking 'Execute Workflow' Node": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request Node (The Python Bridge)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request Node (The Python Bridge)": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Human Escalation Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Automated AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d8e98c97-bf08-466e-8f88-a49cda6f55e4",
+  "meta": {
+    "instanceId": "094bd2e426a18cbe6471f3d0a4313d2fbc2bb6ac29e55eff7da59cebdabba6d9"
+  },
+  "id": "2LAuJzgsNRnI7PzJ",
+  "tags": []
+}
