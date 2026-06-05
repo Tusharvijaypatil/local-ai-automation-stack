@@ -1,96 +1,185 @@
-# Local AI Automation Stack & Private Orchestration Pipelines
+# Local AI Automation Stack
 
-## Executive Summary
-Modern enterprise operations are increasingly throttled by the recurring subscription costs and data privacy concerns associated with third-party automation platforms (e.g., Make.com) and proprietary LLM APIs (e.g., OpenAI). This repository provides a blueprint for a fully self-hosted, local-first alternative. 
+A self-hosted, local-first automation stack: **n8n** for workflow orchestration
+plus a **local LLM via Ollama**, all running in Docker. The point is to run
+automation pipelines (lead enrichment, scraping, outreach drafting) without
+sending data to third-party automation platforms or paid LLM APIs.
 
-By combining the workflow orchestration of **n8n** with the local model execution of **Ollama**, this architecture provides significant commercial value:
-* **Zero Data Exfiltration Risk:** Sensitive operational data, proprietary source code, and customer information never leave the local network boundary, aligning with stringent GDPR, HIPAA, and CCPA compliance requirements.
-* **Cost Elimination:** Replaces variable per-token LLM pricing and workflow execution tier limits with fixed-cost local hardware utilization, enabling infinite scaling of automated routines.
-* **Deterministic Execution:** Mitigates the risk of upstream API outages, rate-limiting, and deprecation of proprietary foundation models.
+This is a personal build / learning project, not a turnkey enterprise product —
+but the pipelines below are real and runnable on a single machine.
+
+## Why local
+
+- **Data stays on the machine.** Lead details, scraped content, and prompts
+  never leave the local network. Useful when you don't want to push customer
+  data through a hosted SaaS.
+- **No per-token / per-execution billing.** Once the hardware is there, runs are
+  free. Tradeoff: you're limited by your own hardware, not infinite scale.
+- **No dependency on a hosted API's uptime or rate limits** for the LLM steps.
 
 ---
 
-## Core Architecture Details
-The stack runs locally on containerized infrastructure designed for low latency, secure external ingress, and bridge networking between automation logic and LLM runtimes.
+## Architecture
 
 ```text
-+-----------------------------------------------------------------------------------+
-| LOCAL HOST                                                                        |
-|                                                                                   |
-|  +--------------------+      +--------------------+      +---------------------+  |
-|  |     n8n Node       | ===> |     HTML Node      | ===> |    AI Agent Node    |  |
-|  | (Orchestration &   |      | (DOM Parser / CSS) |      |     (LangChain)     |  |
-|  |  Data Ingress)     |      +--------------------+      +---------------------+  |
-|  +--------------------+                                             ||            |
-|            ^                                                        || (Bridge)   |
-|            || (Webhooks)                                            ||            |
-|  +--------------------+                                  +---------------------+  |
-|  |    ngrok Tunnel    |                                  |    Ollama Engine    |  |
-|  |   (Edge Routing)   |                                  |   (Local Compute)   |  |
-|  +--------------------+                                  +---------------------+  |
-+------------^----------------------------------------------------------------------+
-             |
-     [Public Internet]
++---------------------------------------------------------------+
+| LOCAL HOST (Docker)                                           |
+|                                                               |
+|  +--------------+   +--------------+   +-------------------+   |
+|  |   n8n Node   |-->|  HTML Node   |-->|   AI Agent Node   |   |
+|  | (orchestrate)|   | (DOM parse)  |   |   (LangChain)     |   |
+|  +--------------+   +--------------+   +-------------------+   |
+|        ^                                       |              |
+|        | webhooks                              | http         |
+|  +--------------+                      +-------------------+   |
+|  | ngrok tunnel |                      |   Ollama engine   |   |
+|  | (public URL) |                      |  (local models)   |   |
+|  +--------------+                      +-------------------+   |
++--------^------------------------------------------------------+
+         |
+   [ public internet ]
+```
 
-- Orchestration: Built on a Docker containerized n8n deployment. Local networking is handled via a dedicated bridge driver, with persistent volumes mapped to the host filesystem to ensure SQLite/PostgreSQL workflow data and custom scripts persist across container restarts.
+- **Orchestration:** n8n in a Docker container, with a persistent volume so
+  workflows and credentials survive container restarts.
+- **Local LLM:** Ollama running as a container, serving models on port `11434`.
+  n8n's Ollama node talks to it over the shared Docker network.
+- **Webhooks:** to receive webhooks from the public internet (e.g. a landing-page
+  form), an **ngrok** tunnel forwards a public URL to the local n8n port. Note:
+  ngrok *exposes* your local n8n endpoint to the internet via a tunnel — it's a
+  way to receive external requests without configuring port-forwarding on your
+  router, not a security/firewall layer. Use ngrok auth + n8n auth to lock it down.
 
-- Tunneling: To receive real-time public webhooks without exposing the host firewall directly to the public internet, an edge-routing layer utilizing secure ngrok tunnels is integrated. This maps external HTTP POST/GET requests directly to the internal n8n webhook port.
+---
 
-- Local LLM Compute: Powered by a local Ollama daemon. The containerized n8n instances communicate with Ollama over the host-docker bridge interface at http://host.docker.internal:11434. Ollama dynamically manages model weights in VRAM/RAM, routing queries to resource-optimized local models such as tinyllama.
+## Setup
 
-Project Deep Dives
-Pipeline 1: Lead Enrichment & Private Synthesis
-This pipeline processes incoming business leads locally without sending contact details to external databases.
+Requires Docker.
 
-1) Webhook Capture: ngrok captures incoming payloads from landing page forms and sends them to the n8n Webhook node.
+### 1. Start the stack
 
-3) Context Assembly: The lead data is structured into an optimized JSON payload.
+```bash
+git clone https://github.com/Tusharvijaypatil/local-ai-automation-stack.git
+cd local-ai-automation-stack
+docker compose up -d
+```
 
-2) Local Token Analysis: The payload is passed to a localized LLM chain to categorize the lead, infer industry alignment, and assign a priority score.
+`docker-compose.yml`:
 
-4) Markdown Synthesis: The output is formatted into a standardized Markdown summary document and appended to a local markdown file, ready for internal sales review.
+```yaml
+services:
+  n8n:
+    image: n8nio/n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      # set this to your ngrok URL when using public webhooks:
+      # - WEBHOOK_URL=https://<your-id>.ngrok-free.app
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - ai-stack
 
-Pipeline 2: Autonomous Web Scraper & Outreach Agent
-This pipeline automates cold outreach personalization while addressing context window limitations of lightweight, local LLMs.
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - ai-stack
 
-1) Target Ingress: Accepts target URLs manually or from a prior queue.
+volumes:
+  n8n_data:
+  ollama_data:
 
-2) Raw Scrape: An HTTP Request node fetches the target website's raw content.
+networks:
+  ai-stack:
+    driver: bridge
+```
 
-3) HTML Extraction Node: Instead of piping raw HTML (which causes VRAM/memory bottlenecks and context overflows in small models like tinyllama), an intermediate HTML Node parses the DOM using CSS selectors targeting the body tag (or specific p, h1, h2 blocks).
+### 2. Pull a model
 
-4) Context Reduction: It strips out headers, footers, inline CSS, script tags, and metadata, writing the output to a compact clean_text property.
+```bash
+docker exec -it $(docker ps -qf name=ollama) ollama pull tinyllama
+```
 
-5) AI Synthesis: The clean_text is injected into the AI Personalization Agent's prompt ({{ $json.clean_text }}) to draft hyper-personalized, three-sentence B2B outreach emails based strictly on the target's unique value proposition.
+`tinyllama` (1.1B) is a small model — fine for quick local testing on modest
+hardware, but light on quality. For real summarization / outreach-drafting
+results, pull a larger model if your hardware allows, e.g.:
 
-Setup & Installation
-Prerequisite Setup
-1) Clone the repository to your local system:
+```bash
+docker exec -it $(docker ps -qf name=ollama) ollama pull llama3.1:8b
+```
 
-Bash
-   git clone [https://github.com/your-username/local-ai-automation-stack.git](https://github.com/your-username/local-ai-automation-stack.git)
-   cd local-ai-automation-stack
+### 3. Point n8n at Ollama
 
-2) Start the containerized services using Docker:
+In the n8n Ollama Chat Model node, set the base URL to:
 
-Bash
-   docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama-local ollama/ollama
+- `http://ollama:11434` — if Ollama runs in this compose stack (recommended), or
+- `http://host.docker.internal:11434` — if Ollama runs directly on the host
+  rather than as a container.
 
-3) Verify Ollama is running and pull the tinyllama model:
+### 4. (Optional) Expose webhooks with ngrok
 
-Bash
-   docker exec -it ollama-local ollama run tinyllama
+```bash
+ngrok http 5678
+```
 
+Then set `WEBHOOK_URL` in the n8n service to the ngrok URL and recreate the
+container.
 
-Importing Workflows
-All pipelines are stored in this repository as serialized JSON templates. To import a pipeline into your stack:
+---
 
-1) Open your browser and navigate to your local n8n instance (typically http://localhost:5678).
+## Importing the workflows
 
-2) Create a new, empty workflow canvas.
+Workflows are stored as JSON in this repo. To import one:
 
-3) Copy the contents of the desired workflow .json file from your repository.
+1. Open n8n at `http://localhost:5678`.
+2. Create a new empty workflow.
+3. Copy the contents of the desired `.json` file.
+4. Click on the canvas and paste (Ctrl+V / Cmd+V). The nodes will appear.
+5. Set your local credentials (Ollama node → base URL above) and run.
 
-4) Focus your cursor on the n8n canvas and press Ctrl+V (or Cmd+V on macOS). The nodes and connection graphs will instantiate automatically.
+---
 
-5) Configure your local credentials (e.g., pointing the Ollama Chat Model node to http://host.docker.internal:11434 with credential name Ollama Local) and run the workflow.
+## Pipelines
+
+### Pipeline 1 — Lead enrichment & local synthesis
+
+Processes incoming leads locally, no external lookups.
+
+1. **Webhook capture:** ngrok forwards a landing-page form POST to the n8n
+   Webhook node.
+2. **Context assembly:** lead data is structured into a clean JSON payload.
+3. **Local analysis:** the payload goes to a local LLM chain that categorizes
+   the lead, infers industry, and assigns a priority score.
+4. **Markdown output:** the result is written as a Markdown summary appended to
+   a local file for internal review.
+
+### Pipeline 2 — Web scraper & outreach drafting
+
+Drafts cold-outreach copy while working around the small context window of
+lightweight local models.
+
+1. **Target input:** accepts target URLs manually or from a queue.
+2. **Raw scrape:** an HTTP Request node fetches the page HTML.
+3. **HTML extraction:** instead of feeding raw HTML to the model (which blows up
+   a small model's context), an HTML node parses the DOM with CSS selectors and
+   pulls `body` / `p` / `h1` / `h2` text.
+4. **Context reduction:** strips headers, footers, inline CSS, scripts, and
+   metadata into a compact `clean_text` field.
+5. **Drafting:** `clean_text` is injected into the prompt
+   (`{{ $json.clean_text }}`) to draft a short, target-specific outreach email.
+
+---
+
+## Limitations / notes
+
+- Quality is bounded by the local model. `tinyllama` is for testing; expect to
+  use a larger model for usable output.
+- ngrok free URLs rotate; for anything persistent you'd want a reserved domain
+  or a different ingress.
+- This is a single-machine setup, not a horizontally scaled deployment.
