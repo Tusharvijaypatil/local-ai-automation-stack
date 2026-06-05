@@ -1,0 +1,31 @@
+services:
+  n8n:
+    image: n8nio/n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      # set this to your ngrok URL when using public webhooks:
+      # - WEBHOOK_URL=https://<your-id>.ngrok-free.app
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - ai-stack
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - ai-stack
+
+volumes:
+  n8n_data:
+  ollama_data:
+
+networks:
+  ai-stack:
+    driver: bridge
