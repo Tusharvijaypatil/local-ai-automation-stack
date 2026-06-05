@@ -1,17 +1,12 @@
-# Local AI Automation Stack & Private Orchestration Pipelines
+# Local AI Automation Stack
 
-## Executive Summary
-Modern enterprise operations are increasingly throttled by the recurring subscription costs and data privacy concerns associated with third-party automation platforms (e.g., Make.com) and proprietary LLM APIs (e.g., OpenAI). This repository provides a blueprint for a fully self-hosted, local-first alternative. 
-
-By combining the workflow orchestration of **n8n** with the local model execution of **Ollama**, this architecture provides significant commercial value:
-* **Zero Data Exfiltration Risk:** Sensitive operational data, proprietary source code, and customer information never leave the local network boundary, aligning with stringent GDPR, HIPAA, and CCPA compliance requirements.
-* **Cost Elimination:** Replaces variable per-token LLM pricing and workflow execution tier limits with fixed-cost local hardware utilization, enabling infinite scaling of automated routines.
-* **Deterministic Execution:** Mitigates the risk of upstream API outages, rate-limiting, and deprecation of proprietary foundation models.
+A self-hosted, local-first n8n + Ollama automation experiment. This repository contains workflow templates designed to run LLM-powered pipelines locally on your own hardware, removing dependencies on third-party cloud orchestrators and external proprietary LLM APIs.
 
 ---
 
-## Core Architecture Details
-The stack runs locally on containerized infrastructure designed for low latency, secure external ingress, and bridge networking between automation logic and LLM runtimes.
+## 1. Core Architecture
+
+The stack runs locally on containerized infrastructure using Docker Compose to bridge n8n's workflow orchestration with Ollama's local model execution.
 
 ```text
 +-----------------------------------------------------------------------------------+
@@ -26,71 +21,79 @@ The stack runs locally on containerized infrastructure designed for low latency,
 |            || (Webhooks)                                            ||            |
 |  +--------------------+                                  +---------------------+  |
 |  |    ngrok Tunnel    |                                  |    Ollama Engine    |  |
-|  |   (Edge Routing)   |                                  |   (Local Compute)   |  |
+|  |   (Public Ingress) |                                  |   (Local Compute)   |  |
 |  +--------------------+                                  +---------------------+  |
 +------------^----------------------------------------------------------------------+
              |
      [Public Internet]
+```
 
-- Orchestration: Built on a Docker containerized n8n deployment. Local networking is handled via a dedicated bridge driver, with persistent volumes mapped to the host filesystem to ensure SQLite/PostgreSQL workflow data and custom scripts persist across container restarts.
+- **Orchestration:** n8n runs in a Docker container. Workflows and local database states are persisted using Docker volumes mapped to n8n's internal filesystem.
+- **Tunneling:** An ngrok tunnel is used to expose the local n8n webhook port to the public internet. This allows the local instance to receive webhook payloads from public landing pages or forms without requiring router port-forwarding or firewall modifications.
+- **Local LLM Compute:** Ollama runs alongside n8n on the same Docker bridge network (`local-ai-network`). The n8n instances connect directly to Ollama at `http://ollama:11434`.
 
-- Tunneling: To receive real-time public webhooks without exposing the host firewall directly to the public internet, an edge-routing layer utilizing secure ngrok tunnels is integrated. This maps external HTTP POST/GET requests directly to the internal n8n webhook port.
+---
 
-- Local LLM Compute: Powered by a local Ollama daemon. The containerized n8n instances communicate with Ollama over the host-docker bridge interface at http://host.docker.internal:11434. Ollama dynamically manages model weights in VRAM/RAM, routing queries to resource-optimized local models such as tinyllama.
+## 2. Workflows & Pipelines
 
-Project Deep Dives
-Pipeline 1: Lead Enrichment & Private Synthesis
-This pipeline processes incoming business leads locally without sending contact details to external databases.
+### Pipeline 1: Lead Enrichment & Local Synthesis
+File: [`project1_lead_scorer.json`](./project1_lead_scorer.json)
 
-1) Webhook Capture: ngrok captures incoming payloads from landing page forms and sends them to the n8n Webhook node.
+Processes incoming business leads and generates a markdown summary locally:
+1. **Webhook Capture:** ngrok receives an HTTP POST payload from a landing page form and routes it to n8n's Webhook node.
+2. **Local Token Analysis:** The payload is sent to Ollama, where a local LLM categorizes the lead and evaluates priority based on the message content and budget.
+3. **Context Assembly:** n8n structures the model's analysis into a clean JSON payload.
+4. **Markdown Synthesis:** The output is appended to a local markdown file on the host filesystem for review.
 
-3) Context Assembly: The lead data is structured into an optimized JSON payload.
+### Pipeline 2: Web Scraper & Outreach Personalization
+File: [`project2_web_scraper.json`](./project2_web_scraper.json)
 
-2) Local Token Analysis: The payload is passed to a localized LLM chain to categorize the lead, infer industry alignment, and assign a priority score.
+Scrapes a target website and drafts a personalized email:
+1. **Target Ingress:** Accepts target URLs manually or from an input queue.
+2. **Raw Scrape:** Fetches the raw HTML content of the target website using n8n's HTTP Request node.
+3. **HTML Extraction:** An HTML parser node isolates the `body` tag and removes script/style tags. This reduces the token volume to avoid context overflows and performance bottlenecks in lightweight models.
+4. **Context Reduction:** The extracted clean text is assigned to a structured workflow variable.
+5. **AI Synthesis:** The clean text is injected into the prompt of a local LLM agent to draft a personalized three-sentence outreach email.
 
-4) Markdown Synthesis: The output is formatted into a standardized Markdown summary document and appended to a local markdown file, ready for internal sales review.
+---
 
-Pipeline 2: Autonomous Web Scraper & Outreach Agent
-This pipeline automates cold outreach personalization while addressing context window limitations of lightweight, local LLMs.
+## 3. Setup & Installation
 
-1) Target Ingress: Accepts target URLs manually or from a prior queue.
+### Prerequisites
+- Docker and Docker Compose installed.
+- An ngrok account (if you want to receive public webhooks).
 
-2) Raw Scrape: An HTTP Request node fetches the target website's raw content.
+### 1. Clone the repository
+```bash
+git clone https://github.com/Tusharvijaypatil/local-ai-automation-stack.git
+cd local-ai-automation-stack
+```
 
-3) HTML Extraction Node: Instead of piping raw HTML (which causes VRAM/memory bottlenecks and context overflows in small models like tinyllama), an intermediate HTML Node parses the DOM using CSS selectors targeting the body tag (or specific p, h1, h2 blocks).
+### 2. Start the Stack
+Create a `docker-compose.yml` file or use the one provided:
+```bash
+docker compose up -d
+```
+This spins up:
+- **Ollama** at `http://localhost:11434`
+- **n8n** at `http://localhost:5678`
 
-4) Context Reduction: It strips out headers, footers, inline CSS, script tags, and metadata, writing the output to a compact clean_text property.
+### 3. Configure the Local LLM
+By default, the workflow templates reference `tinyllama:latest` (a lightweight 1.1B model). This model is a low-resource demo default chosen for fast execution on standard laptops, but its reasoning and instruction-following capabilities are highly limited.
 
-5) AI Synthesis: The clean_text is injected into the AI Personalization Agent's prompt ({{ $json.clean_text }}) to draft hyper-personalized, three-sentence B2B outreach emails based strictly on the target's unique value proposition.
+To pull the default model:
+```bash
+docker exec -it ollama-local ollama run tinyllama
+```
 
-Setup & Installation
-Prerequisite Setup
-1) Clone the repository to your local system:
+For higher-quality output, swap in a larger model (e.g., Llama 3 8B or Gemma 2 9B) if your hardware has sufficient VRAM/RAM:
+```bash
+docker exec -it ollama-local ollama run llama3
+```
+After pulling a larger model, update the **Model** field in n8n's Ollama Chat Model node to match the model name (e.g., `llama3:latest`).
 
-Bash
-   git clone [https://github.com/your-username/local-ai-automation-stack.git](https://github.com/your-username/local-ai-automation-stack.git)
-   cd local-ai-automation-stack
-
-2) Start the containerized services using Docker:
-
-Bash
-   docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama-local ollama/ollama
-
-3) Verify Ollama is running and pull the tinyllama model:
-
-Bash
-   docker exec -it ollama-local ollama run tinyllama
-
-
-Importing Workflows
-All pipelines are stored in this repository as serialized JSON templates. To import a pipeline into your stack:
-
-1) Open your browser and navigate to your local n8n instance (typically http://localhost:5678).
-
-2) Create a new, empty workflow canvas.
-
-3) Copy the contents of the desired workflow .json file from your repository.
-
-4) Focus your cursor on the n8n canvas and press Ctrl+V (or Cmd+V on macOS). The nodes and connection graphs will instantiate automatically.
-
-5) Configure your local credentials (e.g., pointing the Ollama Chat Model node to http://host.docker.internal:11434 with credential name Ollama Local) and run the workflow.
+### 4. Importing Workflows to n8n
+1. Open n8n in your browser at `http://localhost:5678`.
+2. Create a new workflow.
+3. Open [`project1_lead_scorer.json`](./project1_lead_scorer.json) or [`project2_web_scraper.json`](./project2_web_scraper.json) in a text editor, copy the entire JSON content, and paste it (Ctrl+V) directly onto the n8n workflow canvas.
+4. When configuring the Ollama model node, ensure the Base URL is set to `http://ollama:11434` (the container DNS name inside the Docker bridge network).

@@ -1,0 +1,32 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-local
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - local-ai-network
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n-local
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - local-ai-network
+    depends_on:
+      - ollama
+
+volumes:
+  ollama_data:
+  n8n_data:
+
+networks:
+  local-ai-network:
+    driver: bridge
